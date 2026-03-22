@@ -1,7 +1,8 @@
 import axios from 'axios';
 import type { Token } from '@/types';
 
-const API_BASE_URL = '/api';
+// Используем переменную окружения для production или proxy для разработки
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 // Создаём базовый экземпляр axios
 const api = axios.create({
@@ -9,6 +10,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: false,
 });
 
 // Добавляем JWT токен к запросам

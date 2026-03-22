@@ -684,6 +684,94 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 ---
 
+## 🚀 Деплой в production (Vercel + Railway)
+
+### Архитектура деплоя
+
+```
+┌─────────────────┐     ┌──────────────────┐
+│   Vercel        │────▶│   Railway        │
+│   (Frontend)    │ API │   (Backend)      │
+│   React + Vite  │◀────│   FastAPI + GROQ │
+└─────────────────┘     └──────────────────┘
+                               │
+                               ▼
+                        ┌──────────────────┐
+                        │   PostgreSQL     │
+                        │   (Railway DB)   │
+                        └──────────────────┘
+```
+
+### Frontend на Vercel
+
+**1. Подготовка:**
+```bash
+cd frontend
+
+# Создать .env.production
+echo "VITE_API_URL=https://your-project.railway.app/api" > .env.production
+```
+
+**2. vercel.json:**
+```json
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://your-project.railway.app/api/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
+```
+
+**3. Деплой:**
+- Vercel UI: Import GitHub repo → Root: `frontend`
+- Или CLI: `vercel --prod`
+
+### Backend на Railway
+
+**1. Переменные окружения:**
+```env
+GROQ_API_KEY=your_key
+DATABASE_URL=postgresql://...
+JWT_SECRET_KEY=your_secret
+FRONTEND_URL=https://your-app.vercel.app
+```
+
+**2. Procfile:**
+```
+web: uvicorn ai_friend_backend.app.main:app --host 0.0.0.0 --port $PORT
+```
+
+**3. Деплой:**
+- Railway UI: New Project → Deploy from GitHub
+- Автоматический деплой при push
+
+### Полный checklist
+
+- [ ] Получить GROQ API Key
+- [ ] Создать проект на Railway
+- [ ] Добавить PostgreSQL базу
+- [ ] Настроить переменные backend
+- [ ] Задеплоить backend
+- [ ] Проверить /health endpoint
+- [ ] Обновить vercel.json с backend URL
+- [ ] Создать проект на Vercel
+- [ ] Добавить VITE_API_URL
+- [ ] Задеплоить frontend
+- [ ] Протестировать регистрацию и чат
+
+📖 **Подробная инструкция:** см. [DEPLOYMENT.md](./DEPLOYMENT.md)
+
+---
+
 ## 📅 Timeline
 
 | Этап | Задачи | Длительность |
