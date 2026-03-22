@@ -148,6 +148,7 @@
     "memory_panel_title": "Memory",
     "memory_empty": "Memories will appear after chatting",
     "message_input_placeholder": "Type a message...",
+    "empty_chat_message": "Start a conversation with your friend!",
     "memory_type_fact": "Fact",
     "memory_type_preference": "Preference",
     "memory_type_event": "Event",
