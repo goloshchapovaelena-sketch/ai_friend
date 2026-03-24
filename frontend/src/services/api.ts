@@ -42,15 +42,10 @@ export const authApi = {
   },
   
   login: async (email: string, password: string) => {
-    const formData = new URLSearchParams();
-    formData.append('username', email);
-    formData.append('password', password);
-
-    const response = await api.post<Token>('/auth/login', formData.toString(), {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-      },
-    } as any);
+    const response = await api.post<Token>('/auth/login', {
+      email,
+      password,
+    });
 
     return response.data;
   },
