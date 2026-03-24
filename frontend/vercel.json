@@ -7,7 +7,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://ai-friend-backend.onrender.com/api/$1"
+      "destination": "https://ai-friend-s0ib.onrender.com"
     },
     {
       "source": "/(.*)",
