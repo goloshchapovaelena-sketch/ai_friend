@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/subscription", response_model=SubscriptionResponse)
+@router.get("/", response_model=SubscriptionResponse)
 async def get_subscription(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -21,7 +21,7 @@ async def get_subscription(
     """Получить информацию о подписке пользователя"""
     subscription_service = SubscriptionService(db)
     info = await subscription_service.get_subscription_info(current_user)
-    
+
     return SubscriptionResponse(
         is_premium=info["is_premium"],
         plan_type=info["plan_type"],
@@ -33,7 +33,7 @@ async def get_subscription(
     )
 
 
-@router.post("/subscription/create-checkout")
+@router.post("/create-checkout")
 async def create_checkout_session(
     payment_request: PaymentRequest,
     db: AsyncSession = Depends(get_db),
@@ -69,7 +69,7 @@ async def create_checkout_session(
         raise HTTPException(status_code=500, detail="Ошибка создания платежа")
 
 
-@router.post("/subscription/webhook")
+@router.post("/webhook")
 async def stripe_webhook(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -96,7 +96,7 @@ async def stripe_webhook(
         raise HTTPException(status_code=500, detail="Ошибка webhook")
 
 
-@router.get("/subscription/portal")
+@router.get("/portal")
 async def create_portal_session(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -119,19 +119,19 @@ async def create_portal_session(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/subscription/success")
+@router.get("/success")
 async def subscription_success():
     """Страница успешной оплаты (redirect с frontend)"""
     return {"success": True, "message": "Подписка активирована"}
 
 
-@router.get("/subscription/cancel")
+@router.get("/cancel")
 async def subscription_cancel():
     """Страница отмены оплаты"""
     return {"success": False, "message": "Оплата отменена"}
 
 
-@router.post("/subscription/activate")
+@router.post("/activate")
 async def activate_subscription(
     payment_request: PaymentRequest = None,
     db: AsyncSession = Depends(get_db),
@@ -140,7 +140,7 @@ async def activate_subscription(
     """
     Активировать подписку (DEMO режим).
     
-    В production используйте /subscription/create-checkout
+    В production используйте /create-checkout
     """
     logger.info(f"User {current_user.id} activating subscription (DEMO)")
     
@@ -165,7 +165,7 @@ async def activate_subscription(
     }
 
 
-@router.post("/subscription/reset-counter")
+@router.post("/reset-counter")
 async def reset_message_counter(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
