@@ -141,21 +141,34 @@ export const friendsApi = {
 // Chat API
 export const chatApi = {
   send: async (message: string, friendId: number, language?: string) => {
-    const response = await api.post('/chat/send', { 
-      message, 
-      friend_id: friendId,
-      language: language || 'ru',
-    });
-    return response.data;
+    try {
+      const response = await api.post('/chat/send', {
+        message,
+        friend_id: friendId,
+        language: language || 'ru',
+      });
+      return response.data;
+    } catch (error: any) {
+      // Пробрасываем ошибку дальше для обработки в компоненте
+      if (error.response?.status === 403) {
+        const detail = error.response?.data?.detail;
+        throw new SubscriptionLimitError(
+          detail?.message || 'Лимит сообщений исчерпан',
+          detail?.messages_count || 5,
+          detail?.messages_limit || 5
+        );
+      }
+      throw error;
+    }
   },
-  
+
   history: async (friendId: number, limit: number = 50) => {
     const response = await api.get(`/chat/history/${friendId}`, {
       params: { limit },
     });
     return response.data;
   },
-  
+
   memories: async (friendId: number, limit: number = 20) => {
     const response = await api.get(`/chat/memories/${friendId}`, {
       params: { limit },
@@ -163,5 +176,39 @@ export const chatApi = {
     return response.data;
   },
 };
+
+// Subscription API
+export const subscriptionApi = {
+  get: async () => {
+    const response = await api.get('/subscription');
+    return response.data;
+  },
+
+  activate: async (planType: 'monthly' | 'yearly') => {
+    const response = await api.post('/subscription/activate', {
+      plan_type: planType,
+      payment_method: 'card',
+    });
+    return response.data;
+  },
+
+  resetCounter: async () => {
+    const response = await api.post('/subscription/reset-counter');
+    return response.data;
+  },
+};
+
+// Custom error for subscription limit
+export class SubscriptionLimitError extends Error {
+  messagesCount: number;
+  messagesLimit: number;
+
+  constructor(message: string, messagesCount: number, messagesLimit: number) {
+    super(message);
+    this.name = 'SubscriptionLimitError';
+    this.messagesCount = messagesCount;
+    this.messagesLimit = messagesLimit;
+  }
+}
 
 export default api;

@@ -7,6 +7,7 @@ import { UserMenu } from "@/components/UserMenu";
 import { ChatWindow } from "@/components/chat/ChatWindow";
 import { MessageInput } from "@/components/chat/MessageInput";
 import { MemoryPanel } from "@/components/chat/MemoryPanel";
+import { SubscriptionModal } from "@/components/SubscriptionModal";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ArrowLeft, Users, Brain, Menu } from "lucide-react";
@@ -23,7 +24,7 @@ const Chat = () => {
   const [showMemoryPanel, setShowMemoryPanel] = useState(false);
   const [showFriendsSidebar, setShowFriendsSidebar] = useState(false);
 
-  const { messages, memories, isLoading, error, sendMessage, loadHistory, clearMessages, loadMemories } =
+  const { messages, memories, isLoading, error, sendMessage, loadHistory, clearMessages, loadMemories, subscriptionError, clearSubscriptionError } =
     useChat(selectedFriendId);
 
   // Загрузка друзей и истории при монтировании
@@ -187,6 +188,18 @@ const Chat = () => {
         memories={memories}
         isOpen={showMemoryPanel}
         onClose={() => setShowMemoryPanel(false)}
+      />
+
+      {/* Модальное окно подписки */}
+      <SubscriptionModal
+        isOpen={!!subscriptionError}
+        onClose={() => clearSubscriptionError()}
+        messagesCount={subscriptionError?.messagesCount || 0}
+        messagesLimit={subscriptionError?.messagesLimit || 5}
+        onActivate={() => {
+          // После активации можно сбросить ошибку
+          clearSubscriptionError();
+        }}
       />
     </div>
   );

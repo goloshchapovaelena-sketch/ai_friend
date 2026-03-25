@@ -1,14 +1,28 @@
 import { useState, useCallback } from 'react';
-import { chatApi, friendsApi } from '@/services/api';
+import { chatApi, friendsApi, SubscriptionLimitError } from '@/services/api';
 import { useLang } from '@/contexts/LanguageContext';
 import type { Message, Friend, ChatResponse, Memory } from '@/types';
 
-export const useChat = (friendId: number | null) => {
+export interface UseChatResult {
+  messages: Message[];
+  memories: Memory[];
+  isLoading: boolean;
+  error: string | null;
+  sendMessage: (content: string) => Promise<ChatResponse | null>;
+  loadHistory: () => Promise<void>;
+  loadMemories: () => Promise<void>;
+  clearMessages: () => void;
+  subscriptionError: SubscriptionLimitError | null;
+  clearSubscriptionError: () => void;
+}
+
+export const useChat = (friendId: number | null): UseChatResult => {
   const { lang } = useLang();
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [memories, setMemories] = useState<Memory[]>([]);
+  const [subscriptionError, setSubscriptionError] = useState<SubscriptionLimitError | null>(null);
 
   // Отправка сообщения
   const sendMessage = useCallback(async (content: string) => {
@@ -16,6 +30,7 @@ export const useChat = (friendId: number | null) => {
 
     setIsLoading(true);
     setError(null);
+    setSubscriptionError(null);
 
     try {
       const response: ChatResponse = await chatApi.send(content, friendId, lang);
@@ -26,6 +41,11 @@ export const useChat = (friendId: number | null) => {
 
       return response;
     } catch (err) {
+      if (err instanceof SubscriptionLimitError) {
+        setSubscriptionError(err);
+        return null;
+      }
+      
       const message = err instanceof Error ? err.message : 'Не удалось отправить сообщение';
       setError(message);
       return null;
@@ -67,6 +87,11 @@ export const useChat = (friendId: number | null) => {
     setError(null);
   }, []);
 
+  // Очистка ошибки подписки
+  const clearSubscriptionError = useCallback(() => {
+    setSubscriptionError(null);
+  }, []);
+
   return {
     messages,
     memories,
@@ -76,6 +101,8 @@ export const useChat = (friendId: number | null) => {
     loadHistory,
     loadMemories,
     clearMessages,
+    subscriptionError,
+    clearSubscriptionError,
   };
 };
 
