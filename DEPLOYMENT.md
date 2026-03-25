@@ -1,5 +1,18 @@
 # Railway Deployment Guide
 
+## ⚠️ Критически важно: Проблема с SQLite на Render/Railway
+
+**Проблема:** Render и Railway используют **ephemeral filesystem** (временную файловую систему). После каждого деплоя или перезапуска контейнера все файлы, включая `ai_friend.db`, **удаляются**. Это приводит к потере всех данных пользователей.
+
+**Решение:** Используйте **PostgreSQL** для хранения данных.
+
+| Хранилище   | Сохранение данных | Для production |
+|-------------|-------------------|----------------|
+| SQLite      | ❌ Удаляется       | ❌ Нет         |
+| PostgreSQL  | ✅ Сохраняется     | ✅ Да          |
+
+---
+
 ## Backend Deployment on Railway
 
 ### 1. Подготовка
@@ -21,7 +34,7 @@ JWT_SECRET_KEY=your_secret_key_here
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 
-# Database (Railway автоматически создаст PostgreSQL)
+# Database (ОБЯЗАТЕЛЬНО PostgreSQL!)
 DATABASE_URL=postgresql://user:pass@host:5432/railway
 
 # CORS - URL вашего Vercel frontend
@@ -32,7 +45,9 @@ APP_NAME=AI Friend
 DEBUG=false
 ```
 
-**⚠️ Важно:** Замените `https://ai-friend.vercel.app` на ваш актуальный Vercel домен!
+**⚠️ Важно:** 
+- Замените `https://ai-friend.vercel.app` на ваш актуальный Vercel домен!
+- Используйте PostgreSQL, а не SQLite!
 
 ### 3. Настройка build и start команд
 
@@ -176,7 +191,12 @@ docker-compose --profile production up -d
 ```env
 # Required
 GROQ_API_KEY=your_api_key
-DATABASE_URL=sqlite+aiosqlite:///./ai_friend.db
+
+# Для production используйте PostgreSQL!
+DATABASE_URL=postgresql://user:password@host:5432/dbname
+
+# Для локальной разработки (не для production!)
+# DATABASE_URL=sqlite+aiosqlite:///./ai_friend.db
 
 # Optional
 JWT_SECRET_KEY=change_this_secret

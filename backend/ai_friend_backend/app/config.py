@@ -10,7 +10,9 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str
 
     # База данных
-    DATABASE_URL: str = "sqlite+aiosqlite:///./ai_friend.db"
+    # Для production (Render/Railway) используйте PostgreSQL
+    # Для локальной разработки: sqlite+aiosqlite:///./ai_friend.db
+    DATABASE_URL: str
 
     # JWT
     JWT_SECRET_KEY: str
