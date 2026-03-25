@@ -8,16 +8,56 @@ backend_root = os.path.abspath(os.path.join(current_dir, '..'))
 if backend_root not in sys.path:
     sys.path.insert(0, backend_root)
 
+import logging
+from sqlalchemy import text
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import engine, Base, get_db
 from app.routes import auth, chat, friends, subscription
 
+logger = logging.getLogger(__name__)
+
 # Создание таблиц БД
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+
+async def run_migrations():
+    """Автоматическая миграция базы данных при старте"""
+    logger.info("Running database migrations...")
+    
+    async with engine.begin() as conn:
+        try:
+            # Добавляем колонку messages_count в таблицу users
+            await conn.execute(text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS messages_count INTEGER DEFAULT 0"
+            ))
+            logger.info("✅ Added messages_count column to users table")
+        except Exception as e:
+            logger.warning(f"Migration warning (messages_count): {e}")
+        
+        try:
+            # Создаём таблицу subscriptions
+            await conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS subscriptions (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL UNIQUE,
+                    is_premium BOOLEAN DEFAULT FALSE,
+                    plan_type VARCHAR(50) DEFAULT 'monthly',
+                    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMP,
+                    payment_provider VARCHAR(50),
+                    subscription_id VARCHAR(255),
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+            """))
+            logger.info("✅ Created subscriptions table")
+        except Exception as e:
+            logger.warning(f"Migration warning (subscriptions): {e}")
+    
+    logger.info("Database migrations completed")
 
 
 class CORSRegexMiddleware:
@@ -106,7 +146,8 @@ app.include_router(subscription.router, prefix="/api/subscription", tags=["Subsc
 @app.on_event("startup")
 async def on_startup():
     """Инициализация БД при запуске"""
-    await init_db()
+    await run_migrations()  # Сначала миграции
+    await init_db()  # Потом создание таблиц
 
 
 @app.get("/")
