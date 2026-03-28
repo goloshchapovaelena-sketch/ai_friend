@@ -20,15 +20,31 @@ export const SubscriptionModal = ({ isOpen, onClose, messagesCount, messagesLimi
     setError(null);
 
     try {
-      // Создаём checkout сессию
       const response = await subscriptionApi.createCheckout(planType);
-      
-      // Перенаправляем на Stripe Checkout
+
       if (response.checkout_url) {
         window.location.href = response.checkout_url;
+        return;
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка создания платежа');
+
+      if (response.demo_mode) {
+        onActivate?.();
+        onClose();
+        return;
+      }
+
+      setError('Не удалось открыть страницу оплаты');
+    } catch (err: unknown) {
+      const detail =
+        err &&
+        typeof err === 'object' &&
+        'response' in err &&
+        typeof (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail === 'string'
+          ? (err as { response: { data: { detail: string } } }).response.data.detail
+          : err instanceof Error
+            ? err.message
+            : 'Ошибка создания платежа';
+      setError(detail);
     } finally {
       setIsLoading(false);
     }

@@ -3,10 +3,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.services.subscription_service import SubscriptionService
-# from app.services.stripe_service import StripeService  # Stripe отключён
+from app.services.stripe_service import StripeService
 from app.schemas.subscription import SubscriptionResponse, PaymentRequest
 from app.utils.security import get_current_user
 from app.models.user import User
+from app.config import stripe_checkout_enabled, stripe_webhook_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -40,19 +41,40 @@ async def create_checkout_session(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Создать сессию checkout для оплаты через Stripe.
-    
-    ⚠️ Stripe отключён - используется DEMO режим.
+    Создать сессию Stripe Checkout для оплаты подписки (месяц / год).
+    Если Stripe не настроен в .env — включается DEMO-активация без редиректа.
     """
-    logger.info(f"User {current_user.id} creating checkout session: {payment_request.plan_type} (DEMO)")
+    if stripe_checkout_enabled():
+        logger.info(
+            "User %s creating Stripe checkout: %s",
+            current_user.id,
+            payment_request.plan_type,
+        )
+        try:
+            stripe_service = StripeService()
+            result = await stripe_service.create_checkout_session(
+                db, current_user, payment_request.plan_type
+            )
+            return {
+                "success": True,
+                "checkout_url": result["checkout_url"],
+                "session_id": result["session_id"],
+                "demo_mode": False,
+            }
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
-    # Stripe отключён - используем DEMO активацию
+    logger.info(
+        "User %s checkout (DEMO): %s — Stripe не настроен",
+        current_user.id,
+        payment_request.plan_type,
+    )
     subscription_service = SubscriptionService(db)
-    subscription = await subscription_service.activate_premium(
+    await subscription_service.activate_premium(
         user_id=current_user.id,
         plan_type=payment_request.plan_type,
         payment_provider="demo",
-        subscription_id=f"demo_{current_user.id}"
+        subscription_id=f"demo_{current_user.id}",
     )
 
     return {
@@ -60,22 +82,33 @@ async def create_checkout_session(
         "checkout_url": None,
         "session_id": None,
         "demo_mode": True,
-        "message": "Подписка активирована в DEMO режиме"
+        "message": "Подписка активирована в DEMO режиме (укажите STRIPE_* в .env для реальной оплаты)",
     }
 
 
 @router.post("/webhook")
 async def stripe_webhook(
     request: Request,
-    db: AsyncSession = Depends(get_db),
 ):
     """
-    Webhook для обработки событий от Stripe.
-    
-    ⚠️ Stripe отключён - webhook не работает.
+    Webhook Stripe: подпись `Stripe-Signature`, сырое тело запроса.
     """
-    logger.warning("Stripe webhook вызван, но Stripe отключён")
-    return {"status": "disabled", "message": "Stripe отключён"}
+    if not stripe_webhook_enabled():
+        logger.warning("Stripe webhook вызван, но Stripe или STRIPE_WEBHOOK_SECRET не настроены")
+        raise HTTPException(status_code=503, detail="Stripe webhook не настроен")
+
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature")
+    if not sig_header:
+        raise HTTPException(status_code=400, detail="Отсутствует заголовок Stripe-Signature")
+
+    try:
+        stripe_service = StripeService()
+        await stripe_service.handle_webhook(payload, sig_header)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {"status": "success"}
 
 
 @router.get("/portal")
@@ -83,17 +116,20 @@ async def create_portal_session(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Создать сессию для управления подпиской.
-    
-    ⚠️ Stripe отключён - портал не работает.
-    """
-    logger.warning("Stripe portal вызван, но Stripe отключён")
-    return {
-        "success": False,
-        "portal_url": None,
-        "message": "Stripe отключён"
-    }
+    """Ссылка на Stripe Customer Portal (управление подпиской и картой)."""
+    if not stripe_checkout_enabled():
+        return {
+            "success": False,
+            "portal_url": None,
+            "message": "Stripe не настроен",
+        }
+
+    try:
+        stripe_service = StripeService()
+        result = await stripe_service.create_portal_session(current_user.id)
+        return {"success": True, "portal_url": result["portal_url"]}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/success")
@@ -115,30 +151,27 @@ async def activate_subscription(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Активировать подписку (DEMO режим).
-    
-    В production используйте /create-checkout
+    Активировать подписку вручную (DEMO). В production используйте /create-checkout + Stripe.
     """
     logger.info(f"User {current_user.id} activating subscription (DEMO)")
-    
+
     subscription_service = SubscriptionService(db)
-    
-    # DEMO: просто активируем премиум
+
     subscription = await subscription_service.activate_premium(
         user_id=current_user.id,
         plan_type=payment_request.plan_type if payment_request else "monthly",
         payment_provider="demo",
-        subscription_id=f"demo_{current_user.id}"
+        subscription_id=f"demo_{current_user.id}",
     )
-    
+
     return {
         "success": True,
         "message": "Подписка активирована (DEMO режим)",
         "subscription": {
             "is_premium": subscription.is_premium,
             "plan_type": subscription.plan_type,
-            "expires_at": subscription.expires_at.isoformat() if subscription.expires_at else None
-        }
+            "expires_at": subscription.expires_at.isoformat() if subscription.expires_at else None,
+        },
     }
 
 
@@ -149,16 +182,16 @@ async def reset_message_counter(
 ):
     """
     Сбросить счётчик сообщений (для тестирования).
-    
+
     В production этот endpoint нужно удалить или защитить админским доступом.
     """
     current_user.messages_count = 0
     await db.flush()
-    
+
     logger.info(f"User {current_user.id} reset message counter to 0")
-    
+
     return {
         "success": True,
         "message": "Счётчик сообщений сброшен",
-        "messages_count": 0
+        "messages_count": 0,
     }

@@ -13,6 +13,8 @@ import Friends from "./pages/Friends.tsx";
 import Chat from "./pages/Chat.tsx";
 import CreateFriend from "./pages/CreateFriend.tsx";
 import NotFound from "./pages/NotFound.tsx";
+import SubscriptionSuccess from "./pages/SubscriptionSuccess.tsx";
+import SubscriptionCancel from "./pages/SubscriptionCancel.tsx";
 
 const queryClient = new QueryClient();
 
@@ -28,6 +30,8 @@ const App = () => (
               <Route path="/" element={<Index />} />
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
+              <Route path="/subscription/success" element={<SubscriptionSuccess />} />
+              <Route path="/subscription/cancel" element={<SubscriptionCancel />} />
               <Route
                 path="/friends"
                 element={

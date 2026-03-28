@@ -11,9 +11,12 @@ logger = logging.getLogger(__name__)
 
 class StripeService:
     """Сервис для работы со Stripe"""
-    
+
     def __init__(self):
-        stripe.api_key = settings.STRIPE_SECRET_KEY
+        key = (settings.STRIPE_SECRET_KEY or "").strip()
+        if not key:
+            raise ValueError("STRIPE_SECRET_KEY не задан")
+        stripe.api_key = key
     
     async def create_checkout_session(
         self, 
@@ -68,11 +71,14 @@ class StripeService:
                     'subscription_id': str(subscription.id),
                     'plan_type': plan_type,
                 },
+                subscription_data={
+                    'metadata': {
+                        'user_id': str(user.id),
+                        'plan_type': plan_type,
+                    },
+                },
                 customer_email=user.email,  # Автозаполнение email
             )
-            
-            # Сохраняем ID сессии в подписку
-            subscription.subscription_id = checkout_session.id
             await db.flush()
             
             logger.info(f"Created checkout session {checkout_session.id} for user {user.id}")
@@ -117,41 +123,82 @@ class StripeService:
         return {"status": "success"}
     
     async def _handle_checkout_completed(self, session: dict):
-        """Обработка успешного завершения checkout"""
-        logger.info(f"Checkout completed: {session['id']}")
-        # Подписка активируется в _handle_subscription_created
-    
-    async def _handle_subscription_created(self, subscription_data: dict):
-        """Активация подписки после создания"""
+        """Обработка успешного завершения checkout — основной путь активации премиума."""
+        from datetime import datetime
         from app.database import async_session_maker
-        
-        customer_id = subscription_data['customer']
-        stripe_subscription_id = subscription_data['id']
-        
-        # Получаем сессию checkout по subscription_id
-        session = stripe.checkout.Session.retrieve(subscription_data['checkout_session'])
-        user_id = int(session['client_reference_id'])
-        
+
+        logger.info("Checkout completed: %s", session.get("id"))
+        if session.get("mode") != "subscription":
+            return
+        stripe_sub_id = session.get("subscription")
+        ref = session.get("client_reference_id")
+        if not stripe_sub_id or not ref:
+            logger.warning("checkout.session.completed: нет subscription или client_reference_id")
+            return
+        try:
+            user_id = int(ref)
+        except (TypeError, ValueError):
+            logger.error("Некорректный client_reference_id: %s", ref)
+            return
+
+        meta = session.get("metadata") or {}
+        plan_type = meta.get("plan_type") or "monthly"
+
+        stripe_sub = stripe.Subscription.retrieve(stripe_sub_id)
+        period_end = getattr(stripe_sub, "current_period_end", None)
+
         async with async_session_maker() as db:
             result = await db.execute(
                 select(Subscription).where(Subscription.user_id == user_id)
             )
             subscription = result.scalar_one_or_none()
-            
-            if subscription:
-                subscription.is_premium = True
-                subscription.subscription_id = stripe_subscription_id
-                subscription.payment_provider = "stripe"
-                
-                # Устанавливаем дату окончания
-                from datetime import datetime, timedelta
-                if subscription_data['current_period_end']:
-                    subscription.expires_at = datetime.fromtimestamp(subscription_data['current_period_end'])
-                else:
-                    subscription.expires_at = datetime.utcnow() + timedelta(days=30)
-                
-                await db.flush()
-                logger.info(f"Activated premium for user {user_id} via Stripe")
+            if not subscription:
+                logger.warning("Нет записи подписки для user_id=%s", user_id)
+                return
+            subscription.is_premium = True
+            subscription.subscription_id = stripe_sub_id
+            subscription.payment_provider = "stripe"
+            subscription.plan_type = plan_type
+            if period_end:
+                subscription.expires_at = datetime.fromtimestamp(period_end)
+            await db.commit()
+            logger.info("Premium активирован для user %s (checkout.session.completed)", user_id)
+
+    async def _handle_subscription_created(self, subscription_data: dict):
+        """Запасной путь: metadata на Stripe Subscription задаётся в checkout (subscription_data)."""
+        from datetime import datetime, timedelta
+        from app.database import async_session_maker
+
+        meta = subscription_data.get("metadata") or {}
+        ref = meta.get("user_id")
+        if not ref:
+            return
+        try:
+            user_id = int(ref)
+        except (TypeError, ValueError):
+            return
+
+        stripe_subscription_id = subscription_data["id"]
+        period_end = subscription_data.get("current_period_end")
+
+        async with async_session_maker() as db:
+            result = await db.execute(
+                select(Subscription).where(Subscription.user_id == user_id)
+            )
+            subscription = result.scalar_one_or_none()
+            if not subscription:
+                return
+            subscription.is_premium = True
+            subscription.subscription_id = stripe_subscription_id
+            subscription.payment_provider = "stripe"
+            if meta.get("plan_type"):
+                subscription.plan_type = meta["plan_type"]
+            if period_end:
+                subscription.expires_at = datetime.fromtimestamp(period_end)
+            else:
+                subscription.expires_at = datetime.utcnow() + timedelta(days=30)
+            await db.commit()
+            logger.info("Premium активирован для user %s (customer.subscription.created)", user_id)
     
     async def _handle_subscription_updated(self, subscription_data: dict):
         """Обновление подписки"""
@@ -177,6 +224,7 @@ class StripeService:
                     subscription.is_premium = False
                 
                 await db.flush()
+                await db.commit()
     
     async def _handle_subscription_deleted(self, subscription_data: dict):
         """Удаление подписки"""
@@ -193,6 +241,7 @@ class StripeService:
             if subscription:
                 subscription.is_premium = False
                 await db.flush()
+                await db.commit()
                 logger.info(f"Deactivated premium for subscription {stripe_subscription_id}")
     
     async def create_portal_session(self, user_id: int) -> dict:
@@ -215,7 +264,7 @@ class StripeService:
             # Создаём сессию портала
             portal_session = stripe.billing_portal.Session.create(
                 customer=customer_id,
-                return_url=f"{settings.FRONTEND_URL}/subscription",
+                return_url=f"{settings.FRONTEND_URL}/chat",
             )
             
             return {"portal_url": portal_session.url}

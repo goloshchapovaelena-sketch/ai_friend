@@ -27,12 +27,12 @@ class Settings(BaseSettings):
     APP_NAME: str = "AI Friend"
     DEBUG: bool = True
 
-    # Stripe (отключён)
-    # STRIPE_SECRET_KEY: str = ""
-    # STRIPE_PUBLISHABLE_KEY: str = ""
-    # STRIPE_WEBHOOK_SECRET: str = ""
-    # STRIPE_PRICE_ID_MONTHLY: str = ""  # Price ID для monthly подписки
-    # STRIPE_PRICE_ID_YEARLY: str = ""   # Price ID для yearly подписки
+    # Stripe (подписки Checkout). Если не заданы ключи и price id — используется DEMO в API.
+    STRIPE_SECRET_KEY: Optional[str] = None
+    STRIPE_PUBLISHABLE_KEY: Optional[str] = None
+    STRIPE_WEBHOOK_SECRET: Optional[str] = None
+    STRIPE_PRICE_ID_MONTHLY: Optional[str] = None
+    STRIPE_PRICE_ID_YEARLY: Optional[str] = None
 
     # Порты (не используются напрямую, но могут быть в .env)
     BACKEND_PORT: int = 8000
@@ -45,3 +45,17 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def stripe_checkout_enabled() -> bool:
+    """Реальная оплата через Stripe Checkout, если заданы секрет и оба Price ID."""
+    sk = (settings.STRIPE_SECRET_KEY or "").strip()
+    return bool(
+        sk
+        and (settings.STRIPE_PRICE_ID_MONTHLY or "").strip()
+        and (settings.STRIPE_PRICE_ID_YEARLY or "").strip()
+    )
+
+
+def stripe_webhook_enabled() -> bool:
+    return bool((settings.STRIPE_WEBHOOK_SECRET or "").strip() and stripe_checkout_enabled())
