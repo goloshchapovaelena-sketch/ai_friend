@@ -3,6 +3,7 @@ import type { Token } from '@/types';
 
 // Используем переменную окружения для production или proxy для разработки
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+const apiBaseNormalized = API_BASE_URL.replace(/\/$/, '');
 
 // Создаём базовый экземпляр axios
 const api = axios.create({
@@ -35,8 +36,8 @@ api.interceptors.response.use(
       const refreshToken = localStorage.getItem('refresh_token');
       if (refreshToken) {
         try {
-          // Пытаемся обновить токен
-          const response = await axios.post('/api/auth/refresh', {
+          // Тот же базовый URL, что и у api (не хардкод /api — иначе при VITE_API_URL на Render запрос уйдёт на Vercel и даст 404)
+          const response = await axios.post(`${apiBaseNormalized}/auth/refresh`, {
             refresh_token: refreshToken,
           });
 
